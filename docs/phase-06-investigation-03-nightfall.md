@@ -196,6 +196,8 @@ The evidence therefore supported the conclusion:
 
 This was the first major NIGHTFALL timeline event.
 
+![NIGHTFALL suspicious HTTP activity](../evidence/images/phase6_nightfall_suspicious_http_requests.png)
+
 ---
 
 # Finding 03 — Successful Retrieval of `update.dat`
@@ -471,7 +473,9 @@ The connection telemetry therefore independently confirmed that TCP/8080 behaved
 
 Additional successful HTTP sessions to TCP/8080 then appeared in `conn.log`.
 
-![NIGHTFALL Zeek correlation](../evidence/images/phase6_nightfall_zeek_correlation.png)
+![NIGHTFALL Zeek connection correlation](../evidence/images/phase6_nightfall_zeek_conn_correlation.png)
+
+![NIGHTFALL Zeek HTTP correlation](../evidence/images/phase6_nightfall_zeek_http_correlation.png)
 
 This produced an important result:
 
