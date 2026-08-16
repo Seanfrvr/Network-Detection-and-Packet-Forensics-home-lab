@@ -2209,7 +2209,7 @@ def main():
     parser.add_argument(
         "pcap",
         help=(
-            "Path to a PCAP or PCAPNG file"
+            "Path to a PCAP file"
         ),
     )
 
