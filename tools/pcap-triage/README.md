@@ -16,7 +16,7 @@ The first six phases of this project required repeated manual work across Wiresh
 
 TraceHound was built only after those workflows had been performed manually.
 
-The goal was therefore not to create another generic packet parser. It was to automate the repetitive parts of network triage while preserving the distinction between:
+The goal was therefore not to create another generic packet parser. It was to automate repetitive triage while preserving the distinction between:
 
 1. **Raw evidence** — what the packets contain.
 2. **Tool observation** — what TraceHound calculates or surfaces.
@@ -51,22 +51,26 @@ TraceHound v1.0 performs:
 
 ## Requirements
 
-Developed and validated with:
+The project validation used Python 3.13.12. TraceHound requires **Scapy** for packet parsing.
 
-```text
-Python 3.13
-Scapy 2.7.x
+The repository intentionally does not claim an exact Scapy minor version unless that version is independently re-verified from the development environment.
+
+Install dependencies from the repository root:
+
+```bash
+python3 -m pip install -r requirements.txt
 ```
 
-Install Scapy if required:
+or install Scapy directly:
 
 ```bash
 python3 -m pip install scapy
 ```
 
-Check the installed version:
+Check the local versions if needed:
 
 ```bash
+python3 --version
 python3 -c "import scapy; print(scapy.__version__)"
 ```
 
@@ -97,6 +101,8 @@ Example from this lab:
 ```bash
 ./tracehound.py ~/network-forensics-lab/pcaps/phase6_nightfall_blind_case.pcap
 ```
+
+Project validation used `.pcap` captures. PCAPNG compatibility is not advertised as validated in v1.0.
 
 ---
 
@@ -157,7 +163,7 @@ standard deviation
 coefficient of variation
 ```
 
-The coefficient of variation is then used to describe the timing as regular, jittered, variable, or irregular.
+The coefficient of variation is used to describe timing as regular, jittered, variable, or irregular.
 
 GHOST CHANNEL produced:
 
@@ -289,7 +295,7 @@ Priority is intentionally limited to `REVIEW` in v1.0. TraceHound is a triage ut
 
 ## Validation
 
-TraceHound was not validated only against synthetic unit tests. It was replayed against the three PCAP investigations already completed manually in this project.
+TraceHound was replayed against the three PCAP investigations already completed manually in this project.
 
 ### BLACK SIGNAL
 
@@ -347,30 +353,81 @@ The final multi-PCAP run demonstrated that the same generic code produced differ
 
 ---
 
-## Limitations
+## v1.0 Implementation Boundaries
 
-TraceHound is intentionally a **first-pass triage** utility.
+These boundaries are documented deliberately because a triage tool is most useful when the analyst understands how it can mislead them.
 
-Current limitations include:
+### IPv4-Focused Deep Analysis
 
-- no full TCP stream reassembly
-- HTTP parsing is primarily limited to complete plaintext request/response lines present in individual TCP payloads
-- encrypted payload contents are not decrypted
-- TLS visibility is limited to metadata available before encryption, such as ClientHello SNI
-- packet loss or incomplete captures can change counts and timing results
-- repeated traffic may be legitimate automation
-- multi-port behavior may be legitimate service discovery or administration
-- timing analysis groups repeated TCP sessions by source, destination, and destination port, so unrelated application actions to the same service can be grouped together
-- the NIGHTFALL TCP/8080 timing lead demonstrates this limitation: six sessions were statistically recurring, but they represented several different HTTP actions rather than a single proven callback sequence
-- traversal syntax proves the request pattern, not successful file disclosure
+Capture summaries and basic conversation handling can see IPv6, and DNS source extraction has an IPv6 path. However, the validated deep TCP connection, timing, TLS SNI, and HTTP analysis path in v1.0 is primarily implemented inside the IPv4 TCP processing flow.
 
-TraceHound should therefore be used to prioritize deeper investigation with Wireshark, TShark, Zeek, Suricata, and analyst reasoning.
+The three project validation PCAPs used for the showcased TraceHound results are IPv4. IPv6 behavioral parity is therefore **not claimed**.
+
+### Raw TCP Flag Counts Can Include Retransmissions
+
+TraceHound deduplicates initial SYN sessions for repeated-session timing, but the displayed raw TCP SYN / SYN-ACK / RST triage counters are packet-observation counts rather than a full TCP-state reconstruction engine. Retransmissions can therefore influence those raw counts in other captures.
+
+### Multi-Port Review Is Not a Time-Windowed Scan Detector
+
+The v1.0 multi-port heuristic surfaces a source/destination pair after at least four destination ports are observed. It does not currently require those contacts to occur inside a strict time window.
+
+This means long captures can surface legitimate multi-service activity. The result is intentionally labelled **worth review**, not `scan detected`.
+
+### DNS Timing Includes Observed Query Events
+
+Repeated DNS queries are analyzed as observed packet events. Retries or retransmission-like behavior can therefore influence interval series. BLACK SIGNAL intentionally demonstrated why the complete interval sequence and outliers should remain visible to the analyst.
+
+### Detailed LOW-Confidence DNS Wording Is Conservative-but-Broad
+
+The detailed DNS timing section uses the generic phrase `periodicity candidate; analyst review required` once enough events exist for timing analysis, even when the calculated confidence is LOW. The final **Analyst Leads** stage is stricter and promotes DNS periodicity only when the assessment reaches HIGH or MEDIUM confidence.
+
+The confidence field should therefore be read as the controlling evidence signal; the generic detailed-section verdict is not a maliciousness conclusion.
+
+### No Full TCP Reassembly
+
+TraceHound reads packet payloads directly. HTTP or TLS metadata fragmented across multiple packets may therefore be missed.
+
+### Metadata Is Not Payload Meaning
+
+TLS SNI can be extracted before encryption, but encrypted application data cannot be interpreted without decryption material.
+
+### Timing Can Produce False Leads
+
+Backups, monitoring agents, software updates, health checks, and legitimate polling can all generate regular or jittered recurring traffic.
+
+### Grouping Is Simplified
+
+Repeated TCP timing is grouped by source IP, destination IP, and destination port. Multiple application actions against one service can therefore be grouped into one statistical timing series.
+
+The NIGHTFALL TCP/8080 timing lead demonstrates this limitation: six sessions were statistically recurring, but they represented several different HTTP actions rather than one proven callback sequence.
+
+### Incomplete Captures Change Conclusions
+
+Packet loss, capture filters, or starting a capture mid-session can change counts, intervals, and response correlation.
+
+### Pattern Recognition Is Not Exploit Validation
+
+A suspicious path, repeated domain, or multi-port sequence describes the network evidence. It does not establish intent, compromise, or impact on its own.
+
+These limitations are why every final report ends with:
+
+```text
+First-pass triage complete. Analyst review required.
+```
+
+---
+
+## Raw Validation Captures
+
+The original project PCAPs are preserved locally with SHA-256 hashes recorded in the repository, but they are intentionally not distributed in the public portfolio repository because packet captures can retain network metadata beyond the fields shown in the write-ups.
+
+That decision protects the original evidence while making the reproducibility boundary explicit: external readers can inspect the code, screenshots, hashes, rule, and analysis documents, but cannot replay the exact private lab captures from this repository alone.
 
 ---
 
 ## Project Context
 
-TraceHound was created in **Phase 7** of the Network Detection & Packet Forensics Home Lab after the manual investigation phases were complete.
+TraceHound was created in **Phase 7** after the manual investigation phases were complete.
 
 The development path was deliberate:
 
