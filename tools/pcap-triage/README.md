@@ -80,7 +80,7 @@ Make the script executable:
 chmod +x tracehound.py
 ```
 
-Run it against a PCAP or PCAPNG file:
+Run it against a PCAP file:
 
 ```bash
 ./tracehound.py capture.pcap
