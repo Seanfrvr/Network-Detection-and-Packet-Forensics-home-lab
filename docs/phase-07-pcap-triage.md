@@ -6,9 +6,9 @@
 
 ## Phase Overview
 
-The first six phases of this project built the network lab, established baseline traffic, introduced Zeek and Suricata, and completed three progressively harder investigations: **BLACK SIGNAL**, **GHOST CHANNEL**, and **NIGHTFALL**.
+The first six phases of this project built the lab, established baseline traffic, introduced Zeek and Suricata, and completed three progressively harder investigations: **BLACK SIGNAL**, **GHOST CHANNEL**, and **NIGHTFALL**.
 
-By the end of those investigations, the same first-pass analyst tasks were appearing repeatedly:
+By the end of those investigations, the same first-pass tasks kept recurring:
 
 - establish capture size and duration
 - identify dominant protocols and conversations
@@ -19,19 +19,19 @@ By the end of those investigations, the same first-pass analyst tasks were appea
 - inspect HTTP paths, User-Agents, and response codes
 - decide which observations deserved deeper review
 
-Phase 7 asked a different question:
+Phase 7 asked:
 
 > **Can the repetitive parts of that workflow be automated without automating the analyst's conclusion?**
 
-The result was **TraceHound**, a Python and Scapy-based PCAP triage utility built specifically from the investigation techniques already used manually in this lab.
+The result was **TraceHound**, a Python + Scapy PCAP triage utility derived from techniques that had already been performed manually in the lab.
 
-TraceHound does not attempt to replace Wireshark, TShark, Zeek, Suricata, or analyst reasoning. Its purpose is to move an analyst from an unfamiliar PCAP to a concise set of evidence-backed leads faster.
+TraceHound does not replace Wireshark, TShark, Zeek, Suricata, or analyst reasoning. It moves an analyst from an unfamiliar PCAP to a concise set of evidence-backed leads faster.
 
 ---
 
 # Design Principle — Evidence Before Verdict
 
-A central rule from the earlier investigations was preserved throughout development:
+The project keeps three layers separate:
 
 ```text
 Raw evidence
@@ -41,21 +41,11 @@ Tool observation
 Analyst inference
 ```
 
-Those layers must not be collapsed into one another.
+A repeated DNS cadence can be measured from timestamps. TraceHound can call it a **periodicity candidate**. It cannot call it command-and-control without additional evidence.
 
-For example:
+A URI can contain traversal syntax. TraceHound can surface a **path traversal pattern**. It cannot claim successful file disclosure unless the response proves it.
 
-- a repeated DNS cadence can be measured from timestamps
-- TraceHound can call that a **periodicity candidate**
-- the tool cannot call it command-and-control without additional evidence
-
-Likewise:
-
-- a URI can contain traversal syntax
-- TraceHound can surface a **path traversal pattern**
-- the tool cannot claim successful file disclosure unless the response proves it
-
-The tool therefore intentionally uses language such as:
+The tool therefore uses language such as:
 
 ```text
 worth review
@@ -73,8 +63,6 @@ host compromised
 attack successful
 ```
 
-This was not only a wording choice. It became part of the architecture of the final `Analyst Leads` output.
-
 ---
 
 # Development Environment
@@ -83,40 +71,34 @@ This was not only a wording choice. It became part of the architecture of the fi
 |---|---|
 | Kali Linux VM | TraceHound development and PCAP analysis |
 | Python 3.13.12 | Runtime |
-| Scapy 2.7.x | Packet parsing |
+| Scapy | Packet parsing |
 | TShark | Independent field extraction and validation |
 | capinfos | Independent capture metadata validation |
-| Existing Phase 4–6 PCAPs | Behavioral regression / validation set |
+| Phase 4–6 PCAPs | Behavioral regression / validation set |
 
-The final script is stored at:
+The Python runtime was independently recorded as `3.13.12`. Scapy is required, but this public write-up does **not** claim an exact Scapy minor version unless that version is re-verified from the development environment.
+
+Final source:
 
 ```text
 tools/pcap-triage/tracehound.py
 ```
 
-The development versions were checkpointed locally while the final repository contains only the finished tool.
+Development checkpoints were kept locally; the repository contains the finished tool only.
 
 ---
 
 # v0.1 — Capture Summary
 
-The first version intentionally did very little.
-
-Its purpose was to establish a reliable base capable of reading a PCAP sequentially and producing:
+The first version established a reliable base:
 
 - packet count
-- total captured bytes
-- capture duration
+- total bytes
+- duration
 - protocol distribution
 - top bidirectional IP conversations
 
-The initial test used:
-
-```text
-phase6_nightfall_blind_case.pcap
-```
-
-TraceHound reported:
+Against NIGHTFALL, TraceHound reported:
 
 ```text
 Packets    : 90
@@ -136,46 +118,17 @@ The dominant conversation was:
 
 ![TraceHound capture summary](../evidence/images/phase7_01_tracehound_capture_summary.png)
 
-## Independent Validation
+`capinfos` independently returned 90 packets and a `342.301555` second duration. TShark independently returned `TCP 73`, `UDP 13`, and `ARP 4`.
 
-Before building more features, these values were verified independently.
-
-`capinfos` returned:
-
-```text
-Number of packets: 90
-Capture duration: 342.301555 seconds
-```
-
-TShark independently returned:
-
-```text
-TCP: 73
-UDP: 13
-ARP: 4
-```
-
-and its IPv4 conversation statistics confirmed the same three IP conversations and packet counts.
-
-This established a development rule used throughout the phase:
-
-> **TraceHound output would not be trusted simply because TraceHound produced it. Important features had to be independently checked before being accepted.**
+> **TraceHound output was not trusted merely because TraceHound produced it. Important features had to be independently reproduced before acceptance.**
 
 ---
 
 # v0.2 — TCP Connection Triage
 
-The next feature extracted initial client SYN packets and correlated them with SYN-ACK and reset responses.
+TraceHound extracted initial client SYN packets and correlated SYN-ACK and RST responses.
 
-For each source/destination/port combination, TraceHound counted:
-
-```text
-SYN
-SYN-ACK
-RST
-```
-
-When replayed against NIGHTFALL, the output reconstructed the seven-port pattern:
+NIGHTFALL reconstructed the seven-port pattern:
 
 ```text
 22
@@ -187,13 +140,13 @@ When replayed against NIGHTFALL, the output reconstructed the seven-port pattern
 9999
 ```
 
-TCP/8080 stood apart from the others:
+TCP/8080 stood apart:
 
 ```text
 8080 → 6 SYN, 6 SYN-ACK, 0 RST
 ```
 
-while the other six ports each produced a reset.
+The other six tested ports each produced a reset.
 
 ![TraceHound TCP connection triage](../evidence/images/phase7_02_tracehound_tcp_connection_triage.png)
 
@@ -203,56 +156,35 @@ The tool surfaced:
 multi-port connection pattern worth review
 ```
 
-rather than automatically labelling the traffic a port scan.
+rather than automatically calling it a scan.
 
-Independent TShark filters for initial SYN, server SYN-ACK, and server reset packets matched the TraceHound counts exactly.
+Independent TShark filters matched the showcased NIGHTFALL counts.
 
 ---
 
 # v0.3 — DNS Triage
 
-The first protocol-specific behavioral parser focused on DNS queries.
+BLACK SIGNAL was used to validate DNS extraction.
 
-TraceHound began recording:
-
-- total DNS queries
-- unique domains
-- querying hosts
-- repeated domain counts
-- source-to-domain activity
-
-The BLACK SIGNAL PCAP was used as the first test because its expected behavior had already been investigated manually in Phase 4.
-
-TraceHound independently extracted:
+TraceHound found:
 
 ```text
 Total DNS queries : 8
 Unique domains    : 1
 Querying hosts    : 1
-```
 
-and identified:
-
-```text
-pulse.blacksignal.test
-8 queries
+pulse.blacksignal.test : 8 queries
 ```
 
 ![TraceHound DNS triage](../evidence/images/phase7_03_tracehound_dns_triage.png)
 
-This was useful, but repetition alone was not the important BLACK SIGNAL behavior.
-
-The next requirement was timing.
+Repetition alone was not the important behavior. The next requirement was timing.
 
 ---
 
 # v0.4 — DNS Timing & Periodicity
 
-A naive implementation could calculate the mean interval between all repeated events and stop there.
-
-That would have been misleading for BLACK SIGNAL.
-
-The captured query intervals were:
+BLACK SIGNAL's captured intervals were:
 
 ```text
 10.169s
@@ -264,29 +196,15 @@ The captured query intervals were:
 5.035s
 ```
 
-The two shorter intervals came from the retry-like tail of the capture and pulled the overall mean down to:
+The retry-like tail pulled the simple mean down to `8.650s`, while the median remained `10.117s`.
 
-```text
-8.650s
-```
-
-The median remained near the underlying recurring cadence:
-
-```text
-10.117s
-```
-
-To avoid letting a small number of outliers hide the dominant pattern, TraceHound added interval clustering.
-
-For each candidate interval, the tool builds a tolerance band of:
+To avoid letting a small number of outliers hide the dominant pattern, TraceHound added interval clustering using a tolerance of:
 
 ```text
 max(1 second, candidate × 15%)
 ```
 
-and identifies the largest cluster of similar intervals. When equal-sized clusters exist, the one with lower population standard deviation is preferred.
-
-Against BLACK SIGNAL, TraceHound surfaced:
+The result:
 
 ```text
 Dominant interval : 10.122s
@@ -297,23 +215,17 @@ Timing confidence : HIGH
 
 ![TraceHound BLACK SIGNAL periodicity](../evidence/images/phase7_04_tracehound_black_signal_periodicity.png)
 
-The output deliberately retained the two non-clustered intervals rather than hiding them.
-
-The final conclusion was therefore not "beacon detected". It was:
+The correct conclusion remained:
 
 > **A dominant recurring DNS timing pattern exists and deserves analyst review.**
 
-The query timestamps and interval calculations were independently reproduced with TShark and `awk` before this feature was accepted.
+The query timestamps and interval sequence were independently reproduced with TShark before acceptance.
 
 ---
 
 # v0.5 — Jitter-Aware TCP Session Timing
 
-BLACK SIGNAL contained a relatively stable cadence.
-
-GHOST CHANNEL was designed to be harder because its six encrypted sessions were separated by intentionally variable delays.
-
-The manually established session intervals were approximately:
+GHOST CHANNEL used six encrypted sessions separated by deliberately variable delays:
 
 ```text
 8.196s
@@ -323,15 +235,13 @@ The manually established session intervals were approximately:
 7.172s
 ```
 
-A strict periodicity detector could fail to recognize this as recurring behavior because the intervals were not tightly clustered.
-
-TraceHound therefore added a second timing method for repeated TCP sessions based on the **coefficient of variation**:
+TraceHound added coefficient-of-variation analysis:
 
 ```text
 CV = population standard deviation / mean interval
 ```
 
-For GHOST CHANNEL, the result was:
+Result:
 
 ```text
 Connections           : 6
@@ -344,25 +254,15 @@ Timing confidence     : MEDIUM
 
 ![TraceHound GHOST CHANNEL jitter analysis](../evidence/images/phase7_05_tracehound_ghost_channel_jitter.png)
 
-This allowed TraceHound to distinguish between highly regular timing and repeated timing with moderate jitter while still avoiding a maliciousness verdict.
-
-Independent TShark extraction reproduced the six connection starts and interval sequence.
+This described the statistical character of the traffic without assigning malicious intent.
 
 ---
 
 # v0.6 — TLS ClientHello SNI Correlation
 
-Timing alone did not identify what the repeated TCP/9443 sessions represented.
+The TLS parser was not restricted to TCP/443 because GHOST CHANNEL used TCP/9443.
 
-The next feature parsed TLS ClientHello records directly from TCP payloads and extracted Server Name Indication values.
-
-The parser was intentionally not limited to TCP/443 because GHOST CHANNEL used:
-
-```text
-TCP/9443
-```
-
-TraceHound independently found:
+TraceHound extracted:
 
 ```text
 ClientHello SNI observations : 6
@@ -378,7 +278,7 @@ and correlated them with:
 
 ![TraceHound TLS SNI triage](../evidence/images/phase7_06_tracehound_tls_sni_triage.png)
 
-The combination of timing and TLS identity was stronger than either observation alone:
+The combined evidence was stronger than timing alone:
 
 ```text
 repeated TCP sessions
@@ -388,39 +288,24 @@ moderate timing jitter
 same TLS SNI
 ```
 
-But the encrypted payload remained unavailable.
-
-The correct tool-level observation therefore remained:
-
-> **Repeated TLS sessions using the same identity are worth analyst review.**
-
-TShark TLS dissection independently returned the same SNI six times.
+But the encrypted payload remained unavailable, so the result stayed **worth analyst review**, not `C2 confirmed`.
 
 ---
 
 # v0.7 — HTTP Triage
 
-NIGHTFALL required a different class of evidence.
+NIGHTFALL required plaintext HTTP parsing.
 
-TraceHound added plaintext HTTP parsing for request metadata and response status lines. The parser extracted:
+TraceHound extracted:
 
 - request method
 - request path
 - User-Agent
-- source and destination
+- source/destination
 - destination port
-- HTTP response status code
+- response status code
 
-It also added simple path-pattern review for traversal indicators such as:
-
-```text
-../
-..\\
-%2e%2e
-%252e%252e
-```
-
-Against NIGHTFALL, TraceHound reconstructed all five requests:
+It reconstructed all five requests:
 
 ```text
 /update.dat
@@ -430,7 +315,7 @@ Against NIGHTFALL, TraceHound reconstructed all five requests:
 /checkin?id=imac&status=ok
 ```
 
-The tool independently counted:
+and counted:
 
 ```text
 HTTP requests      : 5
@@ -440,39 +325,23 @@ Unique User-Agents : 4
 404 responses      : 3
 ```
 
-It also surfaced the repeated check-in URI and flagged:
-
-```text
-/../../../../etc/passwd
-```
-
-as containing a traversal pattern.
+It surfaced the traversal-shaped URI as a path anomaly.
 
 ![TraceHound NIGHTFALL HTTP triage](../evidence/images/phase7_07_tracehound_nightfall_http_triage.png)
 
-The wording again remained deliberately narrow:
-
-```text
-request pattern worth analyst review
-```
-
-The tool did not claim successful traversal because the earlier manual investigation had already shown the request received HTTP 404 and no `/etc/passwd` contents were returned.
-
-TShark independently reproduced all five URIs and the `2 × 200` / `3 × 404` response-code split.
+The tool did **not** claim successful traversal because the earlier manual investigation proved the request received HTTP 404 and no `/etc/passwd` contents were returned.
 
 ---
 
 # v1.0 — Analyst Leads
 
-At this point TraceHound could produce useful sections, but the analyst still had to read the entire output and manually identify the strongest items.
-
-The v1.0 feature therefore consolidated selected observations into:
+The final version consolidated stronger observations into:
 
 ```text
 [ANALYST LEADS]
 ```
 
-Current lead types are:
+Current lead types:
 
 ```text
 MULTI-PORT ACTIVITY
@@ -483,26 +352,15 @@ REPEATED HTTP ACTIVITY
 HTTP PATH ANOMALY
 ```
 
-Each lead contains:
+Each lead contains evidence, context, assessment, and a `REVIEW` priority.
 
-```text
-Evidence
-Context
-Assessment
-Priority
-```
-
-The priority is intentionally `REVIEW` rather than a severity score.
-
-This prevents TraceHound from pretending it can determine business impact or maliciousness from packet structure alone.
+TraceHound intentionally does not assign business severity or maliciousness from packet structure alone.
 
 ---
 
 # Final Multi-PCAP Validation
 
-The finished v1.0 tool was replayed against all three investigation PCAPs with the same generic code and no case-specific indicators hardcoded into the script.
-
-The final result was:
+The finished v1.0 code was replayed against all three investigation PCAPs with the same generic logic and no case-specific expected answers hardcoded into the script.
 
 ```text
 BLACK SIGNAL
@@ -521,9 +379,7 @@ NIGHTFALL
 
 ![TraceHound final multi-PCAP validation](../evidence/images/phase7_08_tracehound_final_multi_pcap_validation.png)
 
-This was the most important validation step in Phase 7.
-
-The tool was not taught:
+The script did not contain the following as expected answers:
 
 ```text
 pulse.blacksignal.test
@@ -534,17 +390,11 @@ sync.ghostchannel.test
 /../../../../etc/passwd
 ```
 
-as expected answers.
-
-Those values were extracted from the packet captures at runtime.
-
-The same analysis logic therefore produced different behavioral leads because the underlying evidence was different.
+Those values were extracted from the captures at runtime.
 
 ---
 
 # What TraceHound Automates
-
-TraceHound automates repetitive first-pass tasks:
 
 ```text
 read packet capture
@@ -560,51 +410,41 @@ surface candidate patterns
 produce analyst leads
 ```
 
-It is particularly useful for answering questions such as:
+It helps answer questions such as:
 
 - Which hosts dominate the capture?
 - Which destination ports were contacted?
 - Which services responded differently?
 - Which domains repeat?
-- Are repeated events strongly periodic or jittered?
-- Do repeated TLS sessions share the same SNI?
+- Are repeated events regular or jittered?
+- Do repeated TLS sessions share an SNI?
 - Which HTTP resources repeat?
-- Are there obvious path patterns worth reviewing?
+- Are there path patterns worth reviewing?
 
 ---
 
 # What TraceHound Does Not Automate
 
-TraceHound deliberately does **not** answer questions that require contextual judgment, such as:
+TraceHound does **not** answer contextual questions such as:
 
 ```text
 Is this malware?
 Is this command-and-control?
-Was this exploitation successful?
+Was exploitation successful?
 Is this user behavior legitimate?
 How severe is this activity?
 Does this represent compromise?
 ```
 
-Those decisions require additional evidence.
-
-This distinction became especially important during NIGHTFALL.
-
-The generic TCP timing engine saw six sessions to TCP/8080 and classified their spacing as jittered with medium confidence. Statistically, that was correct. Analytically, however, the six sessions represented several different HTTP actions: artifact retrievals, a traversal attempt, and repeated check-ins.
-
-Therefore:
+NIGHTFALL demonstrates why. The generic TCP timing engine saw six TCP/8080 sessions and classified their spacing as jittered with medium confidence. Statistically that was correct. Analytically, those sessions represented multiple HTTP actions: artifact retrievals, a traversal attempt, and repeated check-ins.
 
 > **A statistically recurring service pattern is an investigative lead, not proof that every session belongs to one behavioral sequence.**
-
-That limitation is intentionally documented rather than hidden.
 
 ---
 
 # Technical Architecture
 
-The final script keeps the implementation understandable enough to defend in an interview rather than hiding behavior behind a large framework.
-
-Major logical areas include:
+Major logical areas in `tracehound.py` include:
 
 ```text
 packet loading / iteration
@@ -620,25 +460,19 @@ analyst lead consolidation
 report rendering
 ```
 
-State is primarily stored using Python `Counter`, `defaultdict`, lists, and sets.
-
-Sets are used where retransmission or duplicate observations could otherwise inflate counts, including TCP session and TLS ClientHello tracking.
+State is primarily stored with Python `Counter`, `defaultdict`, lists, and sets. Sets are used where duplicate session or TLS observations could otherwise inflate certain behavioral analyses.
 
 ---
 
 # Heuristic Design
 
-## Multi-Port Review
+### Multi-Port Review
 
-TraceHound currently surfaces a multi-port lead when one source/destination pair contains at least four observed destination ports.
+A source/destination pair is surfaced when at least four destination ports are observed. This is a review threshold, **not** a scan signature.
 
-This is a review threshold, not a scan signature.
+### DNS Periodicity
 
-## DNS Periodicity
-
-DNS periodicity requires at least four events and three intervals.
-
-A dominant interval cluster is created using a tolerance of:
+DNS periodicity requires at least four events and three intervals. The dominant cluster uses:
 
 ```text
 max(1.0 second, candidate interval × 15%)
@@ -646,11 +480,9 @@ max(1.0 second, candidate interval × 15%)
 
 Confidence depends on event count, cluster support, and variation inside the dominant cluster.
 
-## TCP Timing
+### TCP Timing
 
-Repeated TCP timing uses coefficient of variation.
-
-The current categories are deliberately simple:
+Repeated TCP timing uses coefficient of variation and describes patterns as:
 
 ```text
 REGULAR
@@ -659,31 +491,25 @@ VARIABLE
 IRREGULAR
 ```
 
-They communicate statistical character rather than maliciousness.
+These are statistical descriptions, not maliciousness labels.
 
-## Repeated TLS Identity
+### Repeated TLS Identity
 
-The v1.0 Analyst Leads section currently requires at least four observations of the same SNI on the same source/destination/service tuple.
+The Analyst Leads stage requires at least four observations of the same SNI on the same source/destination/service tuple.
 
-## Repeated HTTP Paths
+### Repeated HTTP Paths
 
 A path repeated at least twice can be surfaced for review.
 
-## Traversal Review
+### Traversal Review
 
-TraceHound searches the request path for common literal or encoded parent-directory patterns.
-
-This identifies suspicious syntax only. It does not inspect application authorization or prove successful file access.
+Common literal or encoded parent-directory patterns are surfaced. The presence of syntax does not prove successful file access.
 
 ---
 
 # Validation Philosophy
 
-A major lesson from this phase was that building an analysis tool creates a new risk:
-
-> **The analyst can begin trusting the tool because they wrote it.**
-
-To avoid that, feature development followed a consistent pattern:
+Feature development followed a consistent pattern:
 
 ```text
 build feature
@@ -699,48 +525,66 @@ accept or fix the implementation
 
 Examples included:
 
-- `capinfos` vs TraceHound capture metadata
-- TShark vs TraceHound protocol counts
-- TShark conversation tables vs TraceHound host summaries
+- `capinfos` vs capture metadata
+- TShark vs protocol counts
+- TShark conversations vs host summaries
 - TShark SYN/SYN-ACK/RST filters vs TCP triage
-- TShark DNS timestamps vs periodicity intervals
+- TShark DNS timestamps vs periodicity
 - TShark TCP SYN timestamps vs jitter analysis
 - TShark TLS fields vs SNI extraction
 - TShark HTTP fields vs URI and response-code counts
 
-This made tool validation part of the investigation rather than an afterthought.
+This reduced the risk of trusting the tool merely because it was self-written.
 
 ---
 
-# Limitations
+# v1.0 Limitations
 
-The final v1.0 tool has intentional boundaries.
+### IPv4-Focused Deep Analysis
+
+Capture summaries and basic conversation handling can observe IPv6, and DNS source extraction has an IPv6 path. However, the validated deep TCP connection, timing, TLS SNI, and HTTP analysis path is primarily implemented inside the IPv4 TCP flow.
+
+The showcased Phase 4–6 validation captures are IPv4. IPv6 behavioral parity is therefore **not claimed**.
+
+### Raw TCP Flag Counts Can Include Retransmissions
+
+Initial SYN sessions are deduplicated for repeated-session timing, but displayed SYN / SYN-ACK / RST triage counters are packet-observation counts rather than a full TCP-state reconstruction engine. Retransmissions can influence those raw counters in other captures.
+
+### Multi-Port Review Is Not Time-Windowed
+
+The v1.0 multi-port heuristic does not require the observed ports to occur within a strict time window. Long captures can therefore surface legitimate multi-service activity.
+
+### DNS Timing Uses Observed Query Events
+
+Retries or retransmission-like behavior can influence DNS interval series. The full interval sequence and outliers remain visible to the analyst.
+
+The detailed DNS timing section also uses the generic phrase `periodicity candidate; analyst review required` once enough events exist for analysis, including LOW-confidence cases. The final **Analyst Leads** stage is stricter and promotes DNS periodicity only at HIGH or MEDIUM confidence. The confidence field is the controlling signal.
 
 ### No Full TCP Reassembly
 
-TraceHound reads packet payloads directly. HTTP or TLS metadata fragmented across multiple packets may therefore be missed.
+HTTP or TLS metadata split across packets can be missed because the tool parses individual packet payloads rather than performing full stream reassembly.
 
 ### Metadata Is Not Payload Meaning
 
-TLS SNI can be extracted before encryption, but encrypted application data cannot be interpreted without decryption material.
+TLS SNI is visible before encryption; encrypted application payload meaning is not.
 
 ### Timing Can Produce False Leads
 
-Backups, monitoring agents, software updates, health checks, and legitimate polling can all generate regular or jittered recurring traffic.
+Backups, health checks, monitoring, software updates, and other legitimate automation can generate regular or jittered traffic.
 
 ### Grouping Is Simplified
 
-Repeated TCP timing is grouped by source IP, destination IP, and destination port. Multiple application actions against one service can therefore be grouped into one statistical timing series.
+Repeated TCP timing is grouped by source IP, destination IP, and destination port. Different application actions against one service can therefore be grouped into one timing series.
 
 ### Incomplete Captures Change Conclusions
 
-Packet loss, capture filters, or starting a capture mid-session can change counts, intervals, and response correlation.
+Packet loss, capture filters, or beginning capture mid-session can change counts, timing, and response correlation.
 
 ### Pattern Recognition Is Not Exploit Validation
 
-A suspicious path, repeated domain, or multi-port sequence describes the network evidence. It does not establish intent, compromise, or impact on its own.
+A repeated domain, traversal-shaped path, or multi-port pattern describes network evidence. It does not establish intent, compromise, or impact on its own.
 
-These limitations are why every final report ends with:
+These boundaries are why every final report ends with:
 
 ```text
 First-pass triage complete. Analyst review required.
@@ -748,16 +592,21 @@ First-pass triage complete. Analyst review required.
 
 ---
 
+# Raw Validation Captures
+
+The original project PCAPs are preserved locally and their SHA-256 hashes are recorded in the repository.
+
+They are intentionally not distributed in the public portfolio repository because packet captures can preserve network metadata beyond the fields highlighted in the write-ups.
+
+External readers can inspect the code, screenshots, hashes, custom rule, and analysis documents, but cannot replay the exact private lab captures from this repository alone.
+
+---
+
 # Skills Demonstrated
 
-Phase 7 combined network forensics with software development and validation.
-
-The work demonstrated:
-
-- Python scripting for security analysis
+- Python security scripting
 - Scapy packet parsing
 - PCAP iteration and metadata extraction
-- protocol-aware parsing
 - TCP flag analysis
 - conversation aggregation
 - statistical timing analysis
@@ -776,17 +625,13 @@ The work demonstrated:
 
 # Interview Talking Point
 
-A concise explanation of the phase is:
-
-> **After manually completing three network investigations, I built TraceHound to automate the repetitive first-pass triage I kept performing by hand. It parses PCAPs with Scapy, summarizes conversations, evaluates TCP connection behavior, measures DNS and TCP timing, extracts TLS SNI and plaintext HTTP metadata, and then surfaces evidence-backed analyst leads. I validated each major feature independently with TShark or capinfos and replayed the final generic tool against all three previous cases. The important design choice was that it never claims C2 or compromise from heuristics alone — it automates evidence collection while leaving the final interpretation to the analyst.**
+> **After manually completing three network investigations, I built TraceHound to automate the repetitive first-pass triage I kept performing by hand. It parses PCAPs with Scapy, summarizes conversations, evaluates TCP connection behavior, measures DNS and TCP timing, extracts TLS SNI and plaintext HTTP metadata, and surfaces evidence-backed analyst leads. I independently validated each major feature with TShark or capinfos and replayed the same generic tool against all three prior cases. The important design choice was that it never claims C2 or compromise from heuristics alone — it automates evidence collection while leaving final interpretation to the analyst.**
 
 ---
 
 # Final Result
 
-Phase 7 changed the project from a collection of manual network investigations into something more reusable.
-
-The progression across the project became:
+The project progression became:
 
 ```text
 Capture traffic
@@ -803,7 +648,5 @@ Automate repetitive triage with TraceHound
 ```
 
 TraceHound successfully surfaced the defining behaviors of BLACK SIGNAL, GHOST CHANNEL, and NIGHTFALL using the same generic analysis code.
-
-The strongest lesson from the phase remained consistent with the rest of the project:
 
 > **Automation is most useful when it makes evidence easier to find without pretending to replace the analyst who must interpret it.**
