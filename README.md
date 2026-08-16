@@ -10,6 +10,47 @@ This project was built as a progression rather than a collection of disconnected
 
 ---
 
+## 60-Second Case File
+
+If you only have a minute, these are the two results that best represent the project.
+
+### 1. NIGHTFALL — Detection Gap → Custom Rule → Same-PCAP Validation
+
+A blind PCAP investigation reconstructed reconnaissance, successful HTTP artifact transfers, a failed traversal attempt, and repeated check-ins. Suricata could see and reconstruct the EICAR test-file transfer, but the active ruleset did not produce a matching alert. I wrote custom SID `1000001` and replayed the **exact same preserved PCAP**.
+
+```text
+BEFORE  → 0 matching EICAR detection
+AFTER   → SID 1000001 triggered
+```
+
+The evidence did not change. **The detection logic changed.**
+
+![NIGHTFALL detection before and after](evidence/images/phase6_nightfall_detection_before_after.png)
+
+### 2. TraceHound — One Generic Tool, Three Different Investigations
+
+After completing the investigations manually, I built **TraceHound** to automate repetitive first-pass PCAP triage while leaving final interpretation to the analyst.
+
+The same v1.0 code was replayed against all three prior cases without hardcoding their expected answers:
+
+```text
+BLACK SIGNAL  → DNS PERIODICITY
+
+GHOST CHANNEL → RECURRING TCP TIMING
+                REPEATED TLS IDENTITY
+
+NIGHTFALL     → MULTI-PORT ACTIVITY
+                RECURRING TCP TIMING
+                REPEATED HTTP ACTIVITY
+                HTTP PATH ANOMALY
+```
+
+![TraceHound final multi-PCAP validation](evidence/images/phase7_08_tracehound_final_multi_pcap_validation.png)
+
+**Fast links:** [NIGHTFALL](docs/phase-06-investigation-03-nightfall.md) · [TraceHound](docs/phase-07-pcap-triage.md) · [TraceHound source](tools/pcap-triage/tracehound.py) · [Custom Suricata rule](rules/nightfall.rules)
+
+---
+
 ## Project Goals
 
 The lab was designed to practice the full investigative path from raw traffic to analyst conclusion:
