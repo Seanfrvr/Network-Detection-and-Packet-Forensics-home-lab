@@ -16,7 +16,7 @@ If you only have a minute, these are the two results that best represent the pro
 
 ### 1. NIGHTFALL — Detection Gap → Custom Rule → Same-PCAP Validation
 
-A blind PCAP investigation reconstructed reconnaissance, successful HTTP artifact transfers, a failed traversal attempt, and repeated check-ins. Suricata could see and reconstruct the EICAR test-file transfer, but the active ruleset did not produce a matching alert. I wrote custom SID `1000001` and replayed the **exact same preserved PCAP**.
+A blind PCAP investigation reconstructed reconnaissance, successful HTTP artifact transfers, a failed traversal attempt, and repeated check-ins. Suricata could see and reconstruct the EICAR test-file transfer, but the **active pre-custom ruleset used in the lab** did not produce a matching EICAR alert. I wrote custom SID `1000001` and replayed the **exact same preserved PCAP**.
 
 ```text
 BEFORE  → 0 matching EICAR detection
@@ -47,7 +47,7 @@ NIGHTFALL     → MULTI-PORT ACTIVITY
 
 ![TraceHound final multi-PCAP validation](evidence/images/phase7_08_tracehound_final_multi_pcap_validation.png)
 
-**Fast links:** [NIGHTFALL](docs/phase-06-investigation-03-nightfall.md) · [TraceHound](docs/phase-07-pcap-triage.md) · [TraceHound source](tools/pcap-triage/tracehound.py) · [Custom Suricata rule](rules/nightfall.rules)
+**Fast links:** [Architecture](ARCHITECTURE.md) · [NIGHTFALL](docs/phase-06-investigation-03-nightfall.md) · [TraceHound](docs/phase-07-pcap-triage.md) · [TraceHound source](tools/pcap-triage/tracehound.py) · [Custom Suricata rule](rules/nightfall.rules)
 
 ---
 
@@ -73,12 +73,14 @@ The project intentionally avoids treating tool output as truth by default. Wires
 
 ## Architecture
 
+The physical topology and the evidence-analysis flow are documented separately so the virtualization model is clear.
+
 | Role | System | Purpose |
 |---|---|---|
 | Physical endpoint | iMac | Generates controlled client traffic |
+| Virtualization host | MacBook Pro | Runs the analysis VMs sequentially and acts as a temporary evidence-transfer bridge |
 | Packet analysis node | Kali Linux VM | Capture, Wireshark, TShark, Python / TraceHound |
 | Network telemetry / IDS sensor | Ubuntu VM | Zeek and Suricata offline analysis |
-| Transfer bridge | MacBook host | Temporary evidence transfer between VMs |
 
 Core lab addresses used during the investigations:
 
@@ -87,7 +89,9 @@ Physical iMac        192.168.0.147
 Kali analysis node   192.168.0.194
 ```
 
-The architecture was deliberately kept lightweight so the systems could be used sequentially rather than requiring every VM to run at once.
+The architecture was deliberately kept lightweight so Kali and Ubuntu could be used sequentially on the same MacBook host rather than requiring every VM to run simultaneously.
+
+**[Open the full Mermaid architecture & investigation flow](ARCHITECTURE.md)**
 
 ---
 
@@ -318,9 +322,9 @@ Zeek later independently reproduced the manually established connection and HTTP
 
 ### Detection Gap
 
-The stock Suricata ruleset did not produce a meaningful EICAR-transfer alert in the lab replay.
+The **active pre-custom Suricata ruleset used in the lab replay** did not produce a matching EICAR-transfer alert.
 
-That was treated as a **detection-coverage gap relative to the lab objective**, not as proof that Suricata generally cannot detect EICAR.
+Ruleset searches for EICAR-specific strings found no matching EICAR signature in that active ruleset. This was treated as a **detection-coverage gap relative to the lab objective**, not as a claim about every possible Suricata ruleset.
 
 A custom rule was created:
 
@@ -442,6 +446,8 @@ NIGHTFALL
 
 The tool did not contain those case indicators as hardcoded expected answers. They were extracted from the packet evidence at runtime.
 
+TraceHound v1.0 is intentionally a first-pass utility. The validated deep TCP/TLS/HTTP path in this project is IPv4-focused; raw SYN counts can be influenced by retransmissions; multi-port review is a broad heuristic rather than a time-windowed scan detector; and recurring service-level timing can group unrelated application actions. These boundaries are documented rather than hidden.
+
 [Read Phase 07](docs/phase-07-pcap-triage.md)
 
 [Open TraceHound](tools/pcap-triage/tracehound.py)
@@ -453,8 +459,6 @@ The tool did not contain those case indicators as hardcoded expected answers. Th
 # Evidence Integrity
 
 The main investigation PCAPs were preserved with SHA-256 hashes.
-
-Examples include:
 
 ```text
 eeb3054d76ef3b427356b0168519243bea39b0d13c492683d37e286c3489c2e6  phase1_imac_kali_icmp.pcap
@@ -468,6 +472,12 @@ eeb3054d76ef3b427356b0168519243bea39b0d13c492683d37e286c3489c2e6  phase1_imac_ka
 [View the SHA-256 ledger](hashes/SHA256SUMS.txt)
 
 Hashing was used to verify that evidence remained unchanged while moving between analysis systems and replay stages.
+
+### Why the raw PCAPs are not in this public portfolio repository
+
+The repository publishes the hashes, investigation write-ups, screenshots, custom detection, and TraceHound source, but intentionally does **not** publish the raw packet captures. Packet captures can retain network metadata beyond the exact fields highlighted in a write-up, so the original evidence is preserved locally rather than automatically distributed with the portfolio.
+
+This means external readers can review the documented evidence chain and integrity ledger, but cannot independently replay the exact private lab captures from this repository alone.
 
 ---
 
@@ -519,6 +529,9 @@ The goal was to automate tasks that were already understood rather than hiding t
 ```text
 Network-Detection-and-Packet-Forensics-home-lab/
 ├── README.md
+├── ARCHITECTURE.md
+├── requirements.txt
+├── .gitignore
 ├── docs/
 │   ├── phase-01-lab-architecture.md
 │   ├── phase-02-baseline-analysis.md
